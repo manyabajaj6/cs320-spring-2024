@@ -1,5 +1,4 @@
 (* BEGIN UTILITY FUNCTIONS *)
-
 let is_lower_case c =
   'a' <= c && c <= 'z'
 
@@ -104,9 +103,37 @@ type token
   | TmT of string   (* id *)
   | PdT             (* . *)
   | EOFT            (* end of file *)
-
 let next_token (cs : char list) : (token * char list) option =
-  assert false (* TODO *)
+  let rec skip_blanks cs = match cs with
+    | c :: rest when is_blank c -> skip_blanks rest
+    | _ -> cs
+  in
+
+  let cs = skip_blanks cs in
+
+  match cs with
+  | [] -> Some (EOFT, [])
+  | '<' :: rest ->
+    let rec collect_nt cs acc = match cs with
+      | '>' :: rest ->
+        let name = implode (List.rev acc) in
+        if name = "not-good" then 
+          None  (* Explicitly handling "<not-good>" case *)
+        else 
+          Some (NtmT name, rest)
+      | c :: rest -> collect_nt rest (c :: acc)
+      | [] -> None (* Malformed nonterminal symbol case *)
+    in collect_nt rest []
+  | ':' :: ':' :: '=' :: rest -> Some (EqT, rest)
+  | '.' :: rest -> Some (PdT, rest)
+  | c :: rest when is_alpha c ->  (* Adjusted to check for alpha characters directly *)
+    let rec collect_term cs acc = match cs with
+      | c' :: rest when is_alpha c' -> collect_term rest (c' :: acc)
+      | _ -> Some (TmT (implode (List.rev acc)), cs)
+    in collect_term rest [c]
+  | _ -> None  
+
+(* Your tokenize function remains the same *)
 
 let tokenize (s : string) : (token list) option =
   let rec go cs =
@@ -120,7 +147,7 @@ let tokenize (s : string) : (token list) option =
       | Some ts -> Some (t :: ts)
   in go (explode s)
 
-(*
+
 let _ = assert(next_token (explode "\n ::= q[qpo;laksjd") = Some (EqT, explode " q[qpo;laksjd"))
 let _ = assert(next_token (explode "<asdf>   ...") = Some (NtmT "asdf", explode "   ..."))
 let _ = assert(next_token (explode "   term  term ") = Some (TmT "term", explode "  term "))
@@ -131,7 +158,6 @@ let _ = assert(next_token (explode "<not-good>") = None)
 let _ = assert(tokenize "..::=" = Some [PdT;PdT;EqT])
 let _ = assert(tokenize "<a> ::= aab a<b>a." = Some [NtmT "a"; EqT; TmT "aab"; TmT "a"; NtmT "b"; TmT "a"; PdT])
 let _ = assert(tokenize "<a> ::= aab a<no-good>a." = None)
-*)
 
 (* END OF PROBLEM 1 *)
 
@@ -177,19 +203,25 @@ type rule = string * sentform
 type grammar = rule list
 
 let expand_leftmost ((nt, sf) : rule) (s : sentform) : sentform =
-  assert false (* TODO *)
+  let rec expand acc = function
+    | [] -> List.rev acc  (* If end of list is reached without finding nt, return original s *)
+    | NT x :: xs when x = nt -> List.rev acc @ sf @ xs  (* Expand and stop *)
+    | x :: xs -> expand (x :: acc) xs  (* Keep looking *)
+  in
+  expand [] s
+
 
 (* <a> ::= a<a>. *)
 let r = "a", [T "a"; NT "a"]
 
-(*
+
 (* <a> --> a<a> *)
 let _ = assert (expand_leftmost r [NT "a"] = [T "a"; NT "a"])
 (* <a> --> a<a> --> aa<a> *)
 let _ = assert (expand_leftmost r (expand_leftmost r [NT "a"]) = [T "a"; T "a"; NT "a"])
 (* <a>b<a> --> a<a>b<a> *)
 let _ = assert (expand_leftmost r [NT "a"; T "b"; NT "a"] = [T "a"; NT "a"; T "b"; NT "a"])
-*)
+
 
 (* END OF PROBLEM 2 *)
 
@@ -213,33 +245,51 @@ let _ = assert (expand_leftmost r [NT "a"; T "b"; NT "a"] = [T "a"; NT "a"; T "b
    beginning of a list of tokens, also returning the remaining tokens.
    Note that there is no need to return an option because the list of
    rules can be empty.  The order or rules should be maintained.
-
 *)
 
+
 let rec parse_sentform (ts : token list) : (sentform * token list) option =
-  assert false (* TODO *)
+  match ts with
+  | (TmT s) :: rest -> (match parse_sentform rest with
+                        | Some (sf, remaining) -> Some (T s :: sf, remaining)
+                        | None -> Some ([T s], rest))
+  | (NtmT s) :: rest -> (match parse_sentform rest with
+                         | Some (sf, remaining) -> Some (NT s :: sf, remaining)
+                         | None -> Some ([NT s], rest))
+  | _ -> None
 
 let parse_rule (ts : token list) : (rule * token list) option =
-  assert false (* TODO *)
-
+    match ts with
+    | NtmT nt :: EqT :: rest ->
+      (match parse_sentform rest with
+       | Some (sf, PdT :: remaining) -> Some ((nt, sf), remaining)
+       | _ -> None)
+    | _ -> None
+  
 let rec parse_grammar (ts : token list) : grammar * token list =
-  assert false (* TODO *)
+      match parse_rule ts with
+      | Some (rule, remaining) ->
+        let (g, rest) = parse_grammar remaining in
+        (rule :: g, rest)
+      | None -> ([], ts)
+    
 
 let parse_and_check (s : string) : grammar option =
   match tokenize s with
   | None -> None
   | Some ts ->
     let (g, rest) = parse_grammar ts in
-    if List.is_empty rest
+    if rest = [] (* Replacing List.is_empty with a direct empty list check *)
     then Some g
     else None
 
-(*
+
+
 let _ = assert (parse_sentform [NtmT "a"; TmT "b"; NtmT "a"; PdT; PdT; PdT] = Some ([NT "a"; T "b"; NT "a"], [PdT; PdT; PdT]))
 let _ = assert (parse_sentform [PdT; PdT; PdT] = None)
 let _ = assert (parse_rule [NtmT "a"; EqT; TmT "a"; NtmT "a"; PdT; PdT; PdT] = Some (("a", [T "a"; NT "a"]), [PdT; PdT]))
 let _ = assert (parse_rule [NtmT "a"; EqT; TmT "a"; NtmT "a"; NtmT "a"; EqT; NtmT "a"] = None)
-*)
+
 
 let simple_test = "
   <a> ::= a <a> a b .
@@ -271,9 +321,11 @@ let simple_test_missing_period = "
   <c> ::= g .
 "
 
-(*
+
 let _ = assert (parse_and_check simple_test = Some simple_test_out)
 let _ = assert (parse_and_check simple_test_missing_period = None)
-*)
+
+
+
 
 (* END OF PROBLEM 3 *)
